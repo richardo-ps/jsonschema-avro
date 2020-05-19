@@ -108,12 +108,13 @@ jsonSchemaAvro._convertComplexProperty = (name, contents) => {
 	return {
 		name: name,
 		doc: contents.description || '',
-		type: {
+		type: ['null', {
 			type: 'record',
 			name: `${name}_record`,
 			fields: jsonSchemaAvro._convertProperties(contents.properties, contents.required)
-		}
-	}
+		}]
+
+	} 
 }
 
 jsonSchemaAvro._convertArrayProperty = (name, contents) => {
