@@ -73,6 +73,24 @@ jsonSchemaAvro._isRequired = (list, item) => list.includes(item)
 
 jsonSchemaAvro._convertProperties = (schema = {}, required = []) => {
 	return Object.keys(schema).map((item) => {
+
+		/* Fix for incorrectly specifying null default values for arrays and objects */
+
+		if(Array.isArray(schema[item]['type'])){
+
+			if (schema[item]['type'].includes('object')) {
+
+				schema[item]['type'] = 'object'
+
+			}
+
+			if (schema[item]['type'].includes('array')) {
+
+				schema[item]['type'] = 'array'
+				
+			}
+		}
+
 		if(jsonSchemaAvro._isComplex(schema[item])){
 			return jsonSchemaAvro._convertComplexProperty(item, schema[item])
 		}
