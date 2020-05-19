@@ -166,7 +166,20 @@ jsonSchemaAvro._convertProperty = (name, value, required = false) => {
 		types.push('null')
 	}
 	if(Array.isArray(value.type)){
-		types = types.concat(value.type.filter(type => type !== 'null').map(type => typeMapping[type]))
+
+		// Fix for newtonsoft schema/njsonschema .net library refusing to put the null before the type
+
+        const stringArray = value.type
+
+        const positionInArray = stringArray.indexOf('null');
+        const isNullInArray = positionInArray !== -1;
+        const isNullNotAtStart = positionInArray > 0;
+        if (isNullInArray && isNullNotAtStart) {
+            stringArray.splice(positionInArray, 1);
+            stringArray.unshift('null');
+        }
+
+		types = types.concat(stringArray.filter(type => type !== 'null').map(type => typeMapping[type]))
 	}
 	else{
 		types.push(typeMapping[value.type])
