@@ -136,14 +136,39 @@ jsonSchemaAvro._convertArrayProperty = (name, contents) => {
 
 jsonSchemaAvro._convertEnumProperty = (name, contents) => {
 	const valid = contents.enum.every((symbol) => reSymbol.test(symbol))
+	var type = ["null", "string"]
+
+	if (valid) {
+
+		/* Check if null is included in enum values or if default value is set as null */
+
+		if (contents.enum.includes("null") || 
+			contents.enum.includes(null) || 
+			contents.default == "null" || 
+			contents.default == null) {
+
+			var type = ['null', {
+					type: 'enum',
+					name: `${name}_enum`,
+					symbols: contents.enum
+				}]
+
+		} else {
+
+			var type = {
+				type: 'enum',
+				name: `${name}_enum`,
+				symbols: contents.enum
+			}
+
+		}
+
+	}
+
 	let prop = {
 		name: name,
 		doc: contents.description || '',
-		type: valid ? {
-			type: 'enum',
-			name: `${name}_enum`,
-			symbols: contents.enum
-		} : 'string'
+		type: type
 	}
 	if(contents.hasOwnProperty('default')){
 		prop.default = contents.default
