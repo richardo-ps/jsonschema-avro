@@ -71,7 +71,7 @@ jsonSchemaAvro._hasEnum = (schema) => {
 
 jsonSchemaAvro._isRequired = (list, item) => list.includes(item)
 
-jsonSchemaAvro._convertProperties = (schema = {}, required = []) => {
+jsonSchemaAvro._convertProperties = (schema = {}, required = [], path=[]) => {
 	return Object.keys(schema).map((item) => {
 
 		/* Fix for incorrectly specifying null default values for arrays and objects */
@@ -92,32 +92,34 @@ jsonSchemaAvro._convertProperties = (schema = {}, required = []) => {
 		}
 
 		if(jsonSchemaAvro._isComplex(schema[item])){
-			return jsonSchemaAvro._convertComplexProperty(item, schema[item])
+			return jsonSchemaAvro._convertComplexProperty(item, schema[item], path)
 		}
 		else if (jsonSchemaAvro._isArray(schema[item])) {
-			return jsonSchemaAvro._convertArrayProperty(item, schema[item])
+			return jsonSchemaAvro._convertArrayProperty(item, schema[item], path)
 		}
 		else if(jsonSchemaAvro._hasEnum(schema[item])){
-			return jsonSchemaAvro._convertEnumProperty(item, schema[item])
+			return jsonSchemaAvro._convertEnumProperty(item, schema[item], path)
 		}
-		return jsonSchemaAvro._convertProperty(item, schema[item], jsonSchemaAvro._isRequired(required, item))
+		return jsonSchemaAvro._convertProperty(item, schema[item], jsonSchemaAvro._isRequired(required, item), path)
 	})
 }
 
-jsonSchemaAvro._convertComplexProperty = (name, contents) => {
+jsonSchemaAvro._convertComplexProperty = (name, contents, parentPath=[]) => {
+
+	const path = parentPath.slice().concat(name)
 	return {
 		name: name,
 		doc: contents.description || '',
 		type: ['null', {
 			type: 'record',
-			name: `${name}_record`,
-			fields: jsonSchemaAvro._convertProperties(contents.properties, contents.required)
+			name: path.join('_') + '_record',
+			fields: jsonSchemaAvro._convertProperties(contents.properties, contents.required, path)
 		}]
 
 	} 
 }
 
-jsonSchemaAvro._convertArrayProperty = (name, contents) => {
+jsonSchemaAvro._convertArrayProperty = (name, contents, parentPath=[]) => {
 
 	const path = parentPath.slice().concat(name)
 
@@ -136,15 +138,16 @@ jsonSchemaAvro._convertArrayProperty = (name, contents) => {
 			items: jsonSchemaAvro._isComplex(contents.items)
 				? {
 					type: 'record',
-					name: `${name}_record`,
-					fields: jsonSchemaAvro._convertProperties(contents.items.properties, contents.items.required)
+					name: path.join('_') + '_record',
+					fields: jsonSchemaAvro._convertProperties(contents.items.properties, contents.items.required, path)
 				}
-				: jsonSchemaAvro._convertProperty(name, contents.items)
+				: jsonSchemaAvro._convertProperty(name, contents.items, parentPath)
 		}
 	}
 }
 
-jsonSchemaAvro._convertEnumProperty = (name, contents) => {
+jsonSchemaAvro._convertEnumProperty = (name, contents, parentPath=[]) => {
+	const path = parentPath.slice().concat(name)
 	const valid = contents.enum.every((symbol) => reSymbol.test(symbol))
 	var type = ["null", "string"]
 
@@ -159,7 +162,7 @@ jsonSchemaAvro._convertEnumProperty = (name, contents) => {
 
 			var type = ['null', {
 					type: 'enum',
-					name: `${name}_enum`,
+					name: path.join('_') + '_enum',
 					symbols: contents.enum
 				}]
 
@@ -167,7 +170,7 @@ jsonSchemaAvro._convertEnumProperty = (name, contents) => {
 
 			var type = {
 				type: 'enum',
-				name: `${name}_enum`,
+				name: path.join('_') + '_enum',
 				symbols: contents.enum
 			}
 
