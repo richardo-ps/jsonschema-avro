@@ -118,6 +118,16 @@ jsonSchemaAvro._convertComplexProperty = (name, contents) => {
 }
 
 jsonSchemaAvro._convertArrayProperty = (name, contents) => {
+
+	const path = parentPath.slice().concat(name)
+
+	/* Fix for incorrectly specifying null default value for an object inside an array */
+
+	if (contents.items.type.includes('object')) {
+
+		contents.items.type = "object"
+	}
+
 	return {
 		name: name,
 		doc: contents.description || '',
