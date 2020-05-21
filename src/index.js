@@ -74,6 +74,8 @@ jsonSchemaAvro._isRequired = (list, item) => list.includes(item)
 jsonSchemaAvro._convertProperties = (schema = {}, required = [], path=[]) => {
 	return Object.keys(schema).map((item) => {
 
+		const isRequired = jsonSchemaAvro._isRequired(required, item)
+
 		/* Fix for incorrectly specifying null default values for arrays and objects */
 
 		if(Array.isArray(schema[item]['type'])){
@@ -92,22 +94,23 @@ jsonSchemaAvro._convertProperties = (schema = {}, required = [], path=[]) => {
 		}
 
 		if(jsonSchemaAvro._isComplex(schema[item])){
-			return jsonSchemaAvro._convertComplexProperty(item, schema[item], path)
+			return jsonSchemaAvro._convertComplexProperty(item, schema[item], isRequired, path)
 		}
 		else if (jsonSchemaAvro._isArray(schema[item])) {
-			return jsonSchemaAvro._convertArrayProperty(item, schema[item], path)
+			return jsonSchemaAvro._convertArrayProperty(item, schema[item], isRequired, path)
 		}
 		else if(jsonSchemaAvro._hasEnum(schema[item])){
-			return jsonSchemaAvro._convertEnumProperty(item, schema[item], path)
+			return jsonSchemaAvro._convertEnumProperty(item, schema[item], isRequired, path)
 		}
-		return jsonSchemaAvro._convertProperty(item, schema[item], jsonSchemaAvro._isRequired(required, item), path)
+		return jsonSchemaAvro._convertProperty(item, schema[item], jsonSchemaAvro._isRequired(required, item))
 	})
 }
 
-jsonSchemaAvro._convertComplexProperty = (name, contents, parentPath=[]) => {
+jsonSchemaAvro._convertComplexProperty = (name, contents, required = false, parentPath=[]) => {
 
 	const path = parentPath.slice().concat(name)
-	return {
+
+	prop = {
 		name: name,
 		doc: contents.description || '',
 		type: ['null', {
@@ -115,19 +118,22 @@ jsonSchemaAvro._convertComplexProperty = (name, contents, parentPath=[]) => {
 			name: path.join('_') + '_record',
 			fields: jsonSchemaAvro._convertProperties(contents.properties, contents.required, path)
 		}]
-
 	} 
+
+	return prop
+
 }
 
-jsonSchemaAvro._convertArrayProperty = (name, contents, parentPath=[]) => {
+jsonSchemaAvro._convertArrayProperty = (name, contents, required = false, parentPath=[]) => {
 
+	
 	const path = parentPath.slice().concat(name)
 
 	/* Fix for incorrectly specifying null default value for an object inside an array */
 
-	if (contents.items.type.includes('object')) {
+	if(Array.isArray(contents.items.type)){
 
-		contents.items.type = "object"
+		contents.items.type = contents.items.type.filter(type => type !== 'null')[0]
 	}
 
 	return {
@@ -141,15 +147,26 @@ jsonSchemaAvro._convertArrayProperty = (name, contents, parentPath=[]) => {
 					name: path.join('_') + '_record',
 					fields: jsonSchemaAvro._convertProperties(contents.items.properties, contents.items.required, path)
 				}
-				: jsonSchemaAvro._convertProperty(name, contents.items, parentPath)
+				: jsonSchemaAvro._convertProperty(name, contents.items, false, true)
 		}
 	}
 }
 
-jsonSchemaAvro._convertEnumProperty = (name, contents, parentPath=[]) => {
+jsonSchemaAvro._convertEnumProperty = (name, contents, required = false, parentPath=[]) => {
+
 	const path = parentPath.slice().concat(name)
 	const valid = contents.enum.every((symbol) => reSymbol.test(symbol))
-	var type = ["null", "string"]
+
+	const prop = {
+		name: name,
+		doc: contents.description || ''
+	}
+
+	type = {
+			type: 'enum',
+			name: path.join('_') + '_enum',
+			symbols: contents.enum
+	}
 
 	if (valid) {
 
@@ -160,72 +177,107 @@ jsonSchemaAvro._convertEnumProperty = (name, contents, parentPath=[]) => {
 			contents.default == "null" || 
 			contents.default == null) {
 
-			var type = ['null', {
-					type: 'enum',
-					name: path.join('_') + '_enum',
-					symbols: contents.enum
-				}]
+			prop.type = ['null', type]
+			prop.default = null
 
 		} else {
 
-			var type = {
-				type: 'enum',
-				name: path.join('_') + '_enum',
-				symbols: contents.enum
+			if(contents.hasOwnProperty('default')){
+				prop.default = contents.default
 			}
+
+			prop.type = type
+
+		}
+
+	} else {
+
+		// Invalid enum
+		prop.type = ["null", "string"]
+		prop.default = null
+
+	}
+
+	return prop
+}
+
+jsonSchemaAvro._convertProperty = (name, value, required = false, isArrayProperty = false) => {
+	let prop = {
+		name: name,
+		doc: value.description || ''
+	}
+
+	let types = []
+
+	/* All fields are required in Avro by default.  If you want to make something optional, you have to make it nullable by unioning its type with null */
+	
+	// Check if field has been set as optional through type already
+
+	if (Array.isArray(value.type)) {
+
+		json_type = value.type.filter(type => type !== 'null')[0]
+		avro_type = typeMapping[json_type]
+
+		types = ['null', avro_type]
+		prop.default = null // Remove any default value
+
+	} else {
+
+		// Check if field has been explicitly set as required
+
+		if (required){
+
+			json_type = value.type
+			avro_type = typeMapping[json_type]
+
+
+			types = [avro_type]
+
+			// Use default value if provided
+
+			if(value.hasOwnProperty('default')){
+
+				if (value.default !== "null" || value.default !== null) {
+
+					prop.default = value.default
+
+				}
+			}
+
+		} else {
+
+			// Set as optional
+
+			json_type = value.type
+			avro_type = typeMapping[json_type]
+
+			types = ['null', avro_type]
+			prop.default = null 
 
 		}
 
 	}
 
-	let prop = {
-		name: name,
-		doc: contents.description || '',
-		type: type
-	}
-	if(contents.hasOwnProperty('default')){
-		prop.default = contents.default
-	}
-	return prop
-}
+	if (isArrayProperty) {
 
-jsonSchemaAvro._convertProperty = (name, value, required = false) => {
-	let prop = {
-		name: name,
-		doc: value.description || ''
-	}
-	let types = []
-	if(value.hasOwnProperty('default')){
-		//console.log('has a default')
-		prop.default = value.default
-	}
-	else if(!required){
-		//console.log('not required and has no default')
-		prop.default = null
-		types.push('null')
-	}
-	if(Array.isArray(value.type)){
+		json_type = value.type
+		avro_type = typeMapping[json_type]
 
-		// Fix for newtonsoft schema/njsonschema .net library refusing to put the null before the type
+		types = [avro_type]
 
-        const stringArray = value.type
+		console.log('ARRAY of ', avro_type)
 
-        const positionInArray = stringArray.indexOf('null');
-        const isNullInArray = positionInArray !== -1;
-        const isNullNotAtStart = positionInArray > 0;
-        if (isNullInArray && isNullNotAtStart) {
-            stringArray.splice(positionInArray, 1);
-            stringArray.unshift('null');
-        }
+		delete prop.default
 
-		types = types.concat(stringArray.filter(type => type !== 'null').map(type => typeMapping[type]))
 	}
-	else{
-		types.push(typeMapping[value.type])
-	}
-	//console.log('types', types)
-	//console.log('size', types.length)
+
 	prop.type = types.length > 1 ? types : types.shift()
+
+	//console.log('types', types)
+	//console.log('size', types.length)	
+
+	//console.log ('\n\n')
 	//console.log('prop', prop)
 	return prop
+
 }
